@@ -1,0 +1,702 @@
+#include <iostream>
+#include <string>
+#include <cctype>
+#include <cmath>
+#include <vector>
+
+const int BOARD_SIZE = 21;
+
+char current_symbol = '0';
+char past_symbol = 'O';
+
+float white_score = 6.5;
+float black_score = 0;
+
+//Флаг наличия ко на доске и его координаты
+int ko;
+int ko_x = 0;
+int ko_y = 0;
+
+using std::cout;
+using std::cin;
+using std::endl;
+using std::string;
+using std::vector;
+
+class stone
+{
+public:
+	void setSymbol(char ssymbol)
+	{
+		symbol = ssymbol;
+	}
+	char getSymbol(void)
+	{
+		return symbol;
+	}
+	void setDame(int dameValue)
+	{
+		dame = dameValue;
+	}
+	int getDame()
+	{
+		return dame;
+	}
+	void setLink_to_the_root(int x, int y) //линк на корневой комень заменяется на переданный
+	{
+		link_to_the_root.clear();
+		link_to_the_root.push_back(x);
+		link_to_the_root.push_back(y);
+	}
+	void setLink_to_the_root(vector <int> valueLink_to_the_root) //линк на корневой камень добавляет ещё линки (для линков на группы при объед)
+	{
+		for (int i = 0; i < valueLink_to_the_root.size(); i++)
+		{
+			link_to_the_root.push_back(valueLink_to_the_root[i]);
+		}
+	}
+	void delLink_to_the_root(void)
+	{
+		link_to_the_root.clear();
+	}
+	vector <int> getLink_to_the_root()
+	{
+		if (link_to_the_root.empty())
+		{
+			link_to_the_root = self_coord;
+			return link_to_the_root;
+		}
+		else
+			return link_to_the_root;
+	}
+	void setSelf_coord(int x, int y)
+	{
+		if (self_coord.size() == 0)
+		{
+			self_coord.push_back(x);
+			self_coord.push_back(y);
+		}
+	}
+	bool is_the_root()
+	{
+		return link_to_the_root.size() > 2;
+	}
+	void decr_Dame(stone(&board)[BOARD_SIZE][BOARD_SIZE])
+	{
+		vector <int> LNK;
+		if (!link_to_the_root.empty())
+			LNK = board[link_to_the_root[0]][link_to_the_root[1]].getLink_to_the_root();
+		else
+		{
+			link_to_the_root = self_coord;
+			LNK = self_coord;
+		}
+		for (int i = 0; i < LNK.size(); i += 2)
+		{
+			board[LNK[i]][LNK[i + 1]].dame--;
+		}
+	}
+	void incr_Dame(stone(&board)[BOARD_SIZE][BOARD_SIZE])
+	{
+		vector <int> LNK;
+		if (!link_to_the_root.empty())
+			LNK = board[link_to_the_root[0]][link_to_the_root[1]].getLink_to_the_root();
+		else
+		{
+			link_to_the_root = self_coord;
+			LNK = self_coord;
+		}
+		for (int i = 0; i < LNK.size(); i += 2)
+		{
+			board[LNK[i]][LNK[i + 1]].dame++;
+		}
+	}
+	void setTms_counted(int tms_counted_value)
+	{
+		tms_counted = tms_counted_value;
+	}
+	bool getTms_counted()
+	{
+		return tms_counted;
+	}
+private:
+	unsigned int dame = 7;
+	char symbol = ' ';
+	vector <int> link_to_the_root;
+	vector <int> self_coord;
+	bool tms_counted = 0; // необходим для правильного подсчёта даме (могут быть общие)
+};
+
+stone board[BOARD_SIZE][BOARD_SIZE];
+
+void show_board(stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+
+//Обработка пользовательского ввода
+int convert_char(char);
+int convert_string(string);
+
+//Проверка пользовательского ввода
+bool if_pass(string);
+bool if_quit(string);
+bool if_bad_input(string);
+
+bool if_empty(string, stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+
+//Взаимодествие со всей доской
+void clean_board(stone(&board)[BOARD_SIZE][BOARD_SIZE]);			  //Снимает ко
+void clear_tms_counted(stone(&board)[BOARD_SIZE][BOARD_SIZE]);		  //Снимает логические флаги tms_counted
+void upd_neigh_dame(int, int, stone(&board)[BOARD_SIZE][BOARD_SIZE]); //Инкрементирует дамэ
+
+//Проверки допустимости хода в зависимости от расположения соседних камней
+bool check_neighbors(int, int, stone&, stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+int count_free_dame(int x, int y, stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+bool if_can_eat(int, int, stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+bool if_can_connect(int, int, stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+
+//Присоедение камней к группе и съедение
+void connect_to_group(stone&, stone&, stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+int eat(stone&, stone(&board)[BOARD_SIZE][BOARD_SIZE]);
+
+//Конец игры
+void dismiss_corpses(stone(&board)[BOARD_SIZE][BOARD_SIZE]); //Снимает камни, указанные пользователями
+void count_points(stone(&board)[BOARD_SIZE][BOARD_SIZE]); 
+void upd_score(int);
+int bypass_recursively(int x, int y, int* color, stone(&board)[BOARD_SIZE][BOARD_SIZE]); //Рекурсинвный обход для подсчёта очков
+
+
+int main()
+{
+	string buff;
+	int switch_colour = 0; //Индикатор, позволяющий установить правильный цвет камня.
+	int pass = 0;
+
+	string message; //Вывод ошибок при постановке хода;
+
+	//Инициализация доски
+	for (int i = 0; i < BOARD_SIZE; i++)
+		for (int j = 0; j < BOARD_SIZE; j++)
+		{
+			if (i == 0 || i == BOARD_SIZE - 1 || j == 0 || j == BOARD_SIZE - 1)
+				board[i][j].setSymbol(' ');
+			else
+			{
+				board[i][j].setSymbol('.');
+				board[i][j].setSelf_coord(i, j);
+			}
+		}
+
+
+	show_board(board);
+
+	while (pass < 2)
+	{
+		cout << "Enter coordinate of move. Else, enter \"quit\"  to end the program" << endl;
+		cout << "To pass a move, enter \"pass\"." << endl;
+		cin >> buff; 
+
+		buff[0] = toupper(buff[0]);
+
+		int x = convert_string(buff);
+		int y = convert_char(buff[0]);
+
+		char buf_symb = current_symbol;
+		current_symbol = (switch_colour % 2 == 0) ? '0' : 'O';
+
+		//Меняем прошлый цвет только в том случае, если и текущий изменился.
+		if(buf_symb != current_symbol)
+			past_symbol = buf_symb; 
+
+		if (if_quit(buff))
+		{
+			cout << "Program has finished" << endl;
+			break;
+		}
+		else if (if_pass(buff))
+		{
+			pass++;
+			switch_colour++;
+		}
+		else if (if_bad_input(buff))
+		{
+			message = "Bad input. Try again";
+			buff.clear();
+		}
+		else if (!if_empty(buff, board))
+		{
+			if (board[x][y].getSymbol() == 'x')
+				message = "Here is ko-combat. Play another place\n";
+			else
+				message = "Can't place move here. Try again";
+		}
+		else if (!check_neighbors(x, y, board[x][y], board))
+		{
+			message =  "Can't place move here. There is no free space. Try again";
+		}
+		else
+		{
+			board[x][y].setSymbol(current_symbol); //присвоение ячейке массива символа на основе чётности хода
+			upd_neigh_dame(x, y, board); // здесь нужно вызвать функцию, которая продекрементирует даме вражеским камням. Сделано
+
+			//Если возникло ко
+			if (ko == 1)
+			{
+				board[ko_x][ko_y].setSymbol('x');
+				ko = 0;
+			}
+			else
+				clean_board(board); //Если флаг наличия ко == 0, то снимает ограничение в последнем месте, где было ко.
+
+			switch_colour++;
+			pass = 0;
+			message = "Good one";
+		}
+		show_board(board);
+
+		if (message != "Good one")
+			cout << message << "\n\n";
+	}
+
+	if (pass == 2)
+	{
+		dismiss_corpses(board);
+		count_points(board);
+		show_board(board);
+		float sub = white_score - black_score;
+		if (sub > 0)
+			cout << "White wins by " << sub << " points.\n";
+		else
+			cout << "Black wins by " << -sub << " points.\n";
+		system("pause");
+	}
+
+	return 0;
+	}
+
+void show_board(stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	int mid = BOARD_SIZE / 2 - 1;
+	for (int i = 0; i < BOARD_SIZE; i++) 
+	{
+		if (i == 0 || i == BOARD_SIZE - 1)
+			cout << ' ';													// Выравнивание отображённого массива
+		for (int j = 0; j < BOARD_SIZE; j++)
+		{
+
+			if ((j == 0 || j == BOARD_SIZE - 1) && i != 0 && i != BOARD_SIZE - 1)
+			{
+				cout << i;
+				string tab = (i > 9) ? " " : "  ";							// Выравнивание отображённного массива
+				cout << tab;
+			}
+			else if ((i == 0 || i == BOARD_SIZE - 1) && j != 0 && (j != BOARD_SIZE - 1))
+				cout << static_cast <char> ('A' + j - 1) << ' ';
+			else
+				cout << board[i][j].getSymbol() << ' ';
+		}
+		if (i == mid)
+		{
+			cout << '\t' << "White score is: " << white_score;
+		}
+		if (i == mid + 1)
+		{
+			cout << '\t' << "Black score is: " << black_score;
+		}
+		cout << '\n';
+	}
+	cout << endl;
+}
+void clean_board(stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	if (board[ko_x][ko_y].getSymbol() == 'x')
+		board[ko_x][ko_y].setSymbol('.');
+
+}
+bool if_quit(string str)
+{
+	return str == "Quit";
+}
+bool if_pass(string str)
+{
+	return str == "Pass";
+}
+bool if_bad_input(string buff)
+{
+	int x_coord = convert_string(buff);
+	if (buff.length() > 3)
+		return 1;
+	else
+		return (buff[0] < 'A' || buff[0] > 'S') || (x_coord < 1 || x_coord > 19);
+}
+bool if_empty(string buff, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	return board[convert_string(buff)][convert_char(buff[0])].getSymbol() == '.';
+}
+bool check_neighbors(int x, int y, stone &native, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	bool success = false;
+
+	int dame = count_free_dame(x, y, board);
+	native.setDame(dame);
+
+	if (dame)
+		success = true;
+
+	if (if_can_eat(x, y, board))
+		success = true;
+
+	/* Если был съеден единственный камень, то ко установлен в 1 (if_can_eat).
+	   Если при этом он не соединился и при постановке не имел даме, то это ко. Иначе, нет. (Второе условие) */
+
+	if (if_can_connect(x, y, board)) //Требуется для обработки случая возможной нехватки дамэ для соединения
+		success = true;
+	else if (dame && ko) 
+		ko = 0;
+
+	//Не получилось поставить камень – возвращаем всё как было
+	if (!success)
+	{
+		native.setDame(7);
+	}
+
+	return success;
+}
+
+int convert_char(char letter)
+{
+	return letter - 'A' + 1;
+}
+int convert_string(string buff)
+{
+	if (buff.length() > 2)
+		return (buff[1] - 48) * 10 + (buff[2] - 48);
+	else
+		return buff[1] - 48;
+}
+
+int count_free_dame(int x, int y, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	int sum = 0;
+	for (int i = y - 1; i <= y + 1;  i += 2)
+	{
+		if (board[x][i].getSymbol() == '.')
+		{
+			sum++;
+		}	
+	}
+	for (int i = x - 1; i <= x + 1;  i += 2)
+	{
+		if (board[i][y].getSymbol() == '.')
+		{
+			sum++;
+		}	
+	}
+	return sum;
+}
+bool if_can_eat(int x, int y, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	bool success = false;
+	int eaten = 0;
+	int sum = 0;
+	int victim_x, victim_y;
+	for (int i = y - 1; i <= y + 1; i += 2)
+	{
+		if ((board[x][i].getSymbol() == past_symbol) && (board[x][i].getDame() == 1))
+		{
+			eaten = eat(board[x][i], board); 
+			if (eaten == 1)
+			{
+				victim_x = x;
+				victim_y = i;
+			} 
+			sum += eaten;
+			board[x][y].incr_Dame(board);// Если на смежном направлении что-то съелось, прибавляем группе, содержащей камень, дамэ.
+			success = true;
+		}
+	}
+	for (int i = x - 1; i <= x + 1;  i += 2)
+	{
+		if ((board[i][y].getSymbol() == past_symbol) && (board[i][y].getDame() == 1))
+		{
+			eaten = eat(board[i][y], board);
+			if (eaten == 1)
+			{
+				victim_x = i;
+				victim_y = y;
+			}
+			sum += eaten;
+			board[x][y].incr_Dame(board);
+			success = true;
+		}
+	}
+	if (sum == 1)
+	{
+			clean_board(board);
+			ko_x = victim_x;
+			ko_y = victim_y;
+			ko = 1; 
+	}
+	upd_score(sum);
+	return success;
+}
+bool if_can_connect(int x, int y, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	bool success = false;
+
+	vector <int> neighbors; //Костыль для соедининения в специфичных случаях
+
+	for (int i = y - 1; i <= y + 1; i += 2)
+	{
+		if ((board[x][i].getSymbol() == current_symbol) && ((board[x][i].getDame() != 1)
+			|| (board[x][y].getDame() != 0)))
+		{
+			connect_to_group(board[x][y], board[x][i], board);
+			success = true;
+		}
+		else if(board[x][i].getSymbol() == current_symbol)
+		{
+			neighbors.push_back(x);
+			neighbors.push_back(i);
+		}
+
+	}
+	for (int i = x - 1; i <= x + 1; i += 2)
+	{
+		if ((board[i][y].getSymbol() == current_symbol) && ((board[i][y].getDame() != 1)
+			|| (board[x][y].getDame() != 0)))
+		{
+			connect_to_group(board[x][y], board[i][y], board);
+			success = true;
+		}
+		else if (board[i][y].getSymbol() == current_symbol)
+		{
+			neighbors.push_back(i);
+			neighbors.push_back(y);
+		}
+	}
+	if (success)
+	{
+		for (int i = 0; i < neighbors.size(); i += 2)
+			connect_to_group(board[x][y], board[neighbors[i]][neighbors[i + 1]], board);
+	}
+	return success;
+}
+
+int eat(stone& being_eated, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	vector <int> rootLNK = being_eated.getLink_to_the_root();
+	vector <int> groupLNK = board[rootLNK[0]][rootLNK[1]].getLink_to_the_root(); //получение координат всей съедаемой группы
+
+	//проблема: убирание группы с доски освобидит дыхания всем контактирующим камням. Решено
+
+	int eaten = 0;
+	for (int i = 0; i < groupLNK.size(); i += 2)
+	{
+		int x = groupLNK[i];
+		int y = groupLNK[i + 1];
+		for (int j = y - 1; j <= y + 1; j += 2)
+		{
+			if ((board[x][j].getSymbol() == current_symbol))			// если сосед съедаемого - свой камень, прибавить ему дамэ, но не слишком
+			{
+				vector <int> root = board[x][j].getLink_to_the_root();
+				if (!board[root[0]][root[1]].getTms_counted())
+				{
+					board[root[0]][root[1]].setTms_counted(1);			//пометить корневой камень группы
+					board[x][j].incr_Dame(board);						//переписать,чтобы даме апдейтилось у всех. Решено
+				}
+			}
+		}
+		for (int j = x - 1; j <= x + 1; j += 2)
+		{
+			if (board[j][y].getSymbol() == current_symbol)
+			{
+				vector <int> root = board[j][y].getLink_to_the_root();
+				if (!board[root[0]][root[1]].getTms_counted())
+				{
+					board[root[0]][root[1]].setTms_counted(1);						//пометить корневой камень группы
+					board[j][y].incr_Dame(board);
+				}
+			}
+		}
+
+		board[x][y].setSymbol('.');
+		board[x][y].setDame(5);
+		board[x][y].delLink_to_the_root();
+		board[x][y].setTms_counted(0);
+		clear_tms_counted(board);
+		eaten++;
+	}
+	return eaten;
+}
+void connect_to_group(stone& including, stone& neighbor, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	/*Получаем линки всей подключаемой группы и корневой линк соседа и общее даме, которое получат группы при объединении.
+	Корневому линку соседа добавляем линки на подключаемые камни. Всей подключаем группе переадресуем корневой линк на корневой линк соседа.
+	Обновляем даме каждому камню уже объединённой группы.
+	*/
+	vector <int> includLNK = including.getLink_to_the_root();
+	vector <int> neighLNK = neighbor.getLink_to_the_root();
+	vector <int> groupLNK;
+
+	int common_dame = neighbor.getDame() + including.getDame() - 1;
+
+	groupLNK = board[includLNK[0]][includLNK[1]].getLink_to_the_root(); //линки на всю подключаемую группу
+
+	board[neighLNK[0]][neighLNK[1]].setLink_to_the_root(groupLNK);//добавляем линки всех подключаемых камней
+
+	for (int i = 0; i < groupLNK.size(); i += 2)
+	{
+		board[groupLNK[i]][groupLNK[i + 1]].setLink_to_the_root(neighLNK[0], neighLNK[1]); //всем камням группы корневой линк переадресуется на корневой линк соседа
+	}
+	groupLNK = board[neighLNK[0]][neighLNK[1]].getLink_to_the_root(); // обновляем линк, чтобы он указывал на объедин. группу
+	for (int i = 0; i < groupLNK.size(); i += 2)
+	{
+		board[groupLNK[i]][groupLNK[i + 1]].setDame(common_dame);
+	}
+
+}
+
+void upd_neigh_dame(int x, int y, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	for (int j = y - 1; j <= y + 1; j += 2)
+	{
+		if ((board[x][j].getSymbol() == past_symbol))				// если сосед - чужой камень, отнять ему дамэ, но не слишком
+		{
+			vector <int> root = board[x][j].getLink_to_the_root();
+			if (!board[root[0]][root[1]].getTms_counted())
+			{
+				board[root[0]][root[1]].setTms_counted(1);			//пометить корневой камень группы
+				board[x][j].decr_Dame(board);						//переписать,чтобы даме апдейтилось у всех. Решено
+			}
+		}
+	}
+	for (int j = x - 1; j <= x + 1; j += 2)
+	{
+		if (board[j][y].getSymbol() == past_symbol)
+		{
+			vector <int> root = board[j][y].getLink_to_the_root();
+			if (!board[root[0]][root[1]].getTms_counted())
+			{
+				board[root[0]][root[1]].setTms_counted(1);						//пометить корневой камень группы
+				board[j][y].decr_Dame(board);
+			}
+		}
+	}
+	clear_tms_counted(board);
+}
+void upd_score(int incr)
+{
+	if (current_symbol == 'O')
+		white_score += incr;
+	else
+		black_score += incr;
+}
+void clear_tms_counted(stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	for (int i = 0; i < BOARD_SIZE; i++)
+		for (int j = 0; j < BOARD_SIZE; j++)
+		{
+			if (board[i][j].getTms_counted())
+			{
+				board[i][j].setTms_counted(0);
+			}
+		}
+}
+
+void dismiss_corpses(stone (&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	string buff;
+	string message;
+
+	int score = 0;
+
+	show_board(board);
+	cout << "Dismiss dead stones and groups. Enter their coordinates to delete." << '\n';
+	while (buff != "Done")
+	{
+		cout << "\"Done\" to finish \n";
+		cin >> buff;
+
+		buff[0] = toupper(buff[0]);
+
+		int x = convert_string(buff);
+		int y = convert_char(buff[0]);
+
+		if (buff == "Done")
+			continue;
+		else if (if_bad_input(buff))
+		{
+			message = "Bad input. Try again";
+			buff.clear();
+		}
+		else if (if_empty(buff, board))
+		{
+			message = "Here is no groups to dismiss";
+		}
+		else 
+		{
+			char color = board[x][y].getSymbol();
+			score = eat(board[x][y], board);
+			if (color == '0')
+				white_score += score;
+			else
+				black_score += score;
+			message.clear();
+		}
+		show_board(board);
+		if (!message.empty())
+			cout << message << '\n';
+	}
+
+}
+void count_points(stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	int* color = new int;
+	int local_points;
+	for (int i = 1; i < BOARD_SIZE - 2; i++)
+		for (int j = 1; j < BOARD_SIZE - 2; j++)
+		{
+			if (board[i][j].getTms_counted() == 0)
+			{
+				*color = 1;
+				local_points = (bypass_recursively(i, j, color, board) - 1) / 3;
+				if (*color == 2)
+					white_score += local_points;
+				else if (*color == 3)
+					black_score += local_points;
+			}
+			
+
+		}
+	delete color;
+}
+int bypass_recursively(int x, int y, int *color, stone(&board)[BOARD_SIZE][BOARD_SIZE])
+{
+	int sum = 0;
+	if (board[x][y].getSymbol() == '.' && board[x][y].getTms_counted() == 0)
+	{
+		board[x][y].setTms_counted(1);
+		for (int i = x - 1; i <= x + 1; i += 2)
+			sum += bypass_recursively(i, y, color, board);
+		for (int j = y - 1; j <= y + 1; j += 2)
+			sum += bypass_recursively(x, j, color, board);
+	}
+	else if (board[x][y].getSymbol() == 'O')
+	{
+		if (*color == 1 || *color == 2)
+			*color = 2;
+		else
+			*color = 0;
+		sum = 1;
+	}
+	else if (board[x][y].getSymbol() == '0')
+	{
+		if (*color == 1 || *color == 3)
+			*color = 3;
+		else
+			*color = 0;
+		sum = 1;
+	}
+	else
+		sum = 1;
+	return sum;
+}
